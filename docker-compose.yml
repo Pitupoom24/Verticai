@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: verticai-db
+    restart: always
+    environment:
+      POSTGRES_USER: verticai_user
+      POSTGRES_PASSWORD: verticai_pass
+      POSTGRES_DB: verticai
+    ports:
+      - "5432:5432"
+    volumes:
+      - verticai_pgdata:/var/lib/postgresql/data
+
+volumes:
+  verticai_pgdata:
