@@ -1,19 +1,27 @@
 import os
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
+from helper.analyze_scores import analyze_jump
+
 load_dotenv()
 
 app = FastAPI()
 
 # ── Folders ────────────────────────────────────────────────────────────────
-INPUT_VIDEOS_DIR = os.path.join(os.path.dirname(__file__), "input_videos")
-os.makedirs(INPUT_VIDEOS_DIR, exist_ok=True)
+BASE_DIR = Path(__file__).parent
+INPUT_VIDEOS_DIR = BASE_DIR / "input_videos"
+OUTPUT_VIDEOS_DIR = BASE_DIR / "output_videos"
+MODEL_PATH = BASE_DIR / "helper" / "pose_landmarker_heavy.task"
+
+INPUT_VIDEOS_DIR.mkdir(exist_ok=True)
+OUTPUT_VIDEOS_DIR.mkdir(exist_ok=True)
 
 # ── Allowed video MIME types ───────────────────────────────────────────────
 ALLOWED_CONTENT_TYPES = {
@@ -118,7 +126,7 @@ async def upload_video(file: UploadFile = File(...)):
     # Generate a unique filename to avoid collisions
     ext = os.path.splitext(file.filename)[-1]
     unique_filename = f"{uuid.uuid4().hex}{ext}"
-    file_path = os.path.join(INPUT_VIDEOS_DIR, unique_filename)
+    file_path = INPUT_VIDEOS_DIR / unique_filename
 
     # Save file to disk
     contents = await file.read()
@@ -128,20 +136,63 @@ async def upload_video(file: UploadFile = File(...)):
     file_size = len(contents)
     uploaded_at = datetime.utcnow()
 
-    # Insert metadata into PostgreSQL
+    # ── Insert into input_videos ───────────────────────────────────────────
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         INSERT INTO input_videos (original_filename, file_path, content_type, file_size, uploaded_at)
         VALUES (%s, %s, %s, %s, %s)
         RETURNING *
-    """, (file.filename, file_path, file.content_type, file_size, uploaded_at))
-    record = cur.fetchone()
+    """, (file.filename, str(file_path), file.content_type, file_size, uploaded_at))
+    input_record = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    # ── Run pose analysis ──────────────────────────────────────────────────
+    try:
+        output = analyze_jump(
+            model_path=str(MODEL_PATH),
+            input_source=str(file_path),
+            output_dir=str(OUTPUT_VIDEOS_DIR),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+    metrics = output["metrics"]
+    annotated_video_path = output["annotated_video_path"]
+    annotated_filename = Path(annotated_video_path).name
+
+    # ── Insert into output_videos ──────────────────────────────────────────
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        INSERT INTO output_videos (
+            id, original_filename, file_path,
+            hip_normalized_score, smallest_loading_min_hip_flexion,
+            knee_normalized_score, smallest_loading_min_knee_flexion,
+            angular_velocity, angular_velocity_score
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING *
+    """, (
+        input_record["id"],
+        annotated_filename,
+        annotated_video_path,
+        metrics["hip_normalized_score"],
+        metrics["smallest_loading_min_hip_flexion"],
+        metrics["knee_normalized_score"],
+        metrics["smallest_loading_min_knee_flexion"],
+        metrics["angular_velocity"],
+        metrics["angular_velocity_score"],
+    ))
+    output_record = cur.fetchone()
     conn.commit()
     cur.close()
     conn.close()
 
     return {
-        "message": "Video uploaded successfully.",
-        "video": dict(record)
+        "message": "Video uploaded and analyzed successfully.",
+        "input_video": dict(input_record),
+        "output_video": dict(output_record),
     }

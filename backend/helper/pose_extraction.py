@@ -1,5 +1,5 @@
 # Mapping index with body parts (the index is defined by MediaPipe docs)
-from angle_calculation import calculate_angle
+from helper.angle_calculation import calculate_angle
 import math
 
 KEYPOINT_NAMES = [

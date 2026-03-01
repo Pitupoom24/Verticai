@@ -12,7 +12,7 @@ from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.vision import drawing_styles
 from mediapipe.tasks.python.vision import drawing_utils
 
-from pose_extraction import extract_landmarks
+from helper.pose_extraction import extract_landmarks
 
 
 def draw_landmarks_on_image(rgb_image, detection_result):

@@ -3,3 +3,4 @@
 venv/
 .env
 backend/input_videos/
+backend/output_videos/
