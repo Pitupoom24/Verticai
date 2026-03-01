@@ -19,6 +19,7 @@ interface BackendUploadResponse {
     llm_report: string | null
     file_path: string | null
     original_filename: string | null
+    annotated_video_url?: string | null
   }
 }
 
@@ -31,6 +32,12 @@ function toPanelData(response: BackendUploadResponse): JumpAnalysisData {
   const jumpHeightCm = (output.jump_height ?? 0) * 100
   const totalScore = Math.max(0, Math.min(100, output.score ?? 0))
 
+  const fallbackFilename = output.file_path
+    ? output.file_path.split(/[\\/]/).pop()
+    : null
+  const annotatedVideoUrl = output.annotated_video_url
+    || (fallbackFilename ? `http://127.0.0.1:8000/output-videos/file/${encodeURIComponent(fallbackFilename)}` : '')
+
   return {
     total_score: Number(totalScore.toFixed(2)),
     jump_height: Number(jumpHeightCm.toFixed(2)),
@@ -41,8 +48,7 @@ function toPanelData(response: BackendUploadResponse): JumpAnalysisData {
     swing_velocity_score: Number((output.angular_velocity_score ?? 0).toFixed(2)),
     swing_velocity: Number((output.angular_velocity ?? 0).toFixed(2)),
     overall_feedback: output.llm_report || 'No report generated.',
-    // Backend currently returns a local file path, not a browser-accessible URL.
-    annotated_video_url: '',
+    annotated_video_url: annotatedVideoUrl,
   }
 }
 

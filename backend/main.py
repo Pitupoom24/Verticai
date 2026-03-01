@@ -8,8 +8,9 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from openai import OpenAI
 
 from helper.analyze_scores import analyze_jump
@@ -131,8 +132,18 @@ def get_output_videos():
     }
 
 
+@app.get("/output-videos/file/{filename}")
+def get_output_video_file(filename: str):
+    # Prevent path traversal by allowing only a plain filename.
+    safe_name = Path(filename).name
+    file_path = OUTPUT_VIDEOS_DIR / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Annotated video not found.")
+    return FileResponse(str(file_path), media_type="video/mp4", filename=safe_name)
+
+
 @app.post("/input-videos")
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(request: Request, file: UploadFile = File(...)):
     # Validate MIME type
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
@@ -189,6 +200,7 @@ async def upload_video(file: UploadFile = File(...)):
     metrics = output["metrics"]
     annotated_video_path = output["annotated_video_path"]
     annotated_filename = Path(annotated_video_path).name
+    annotated_video_url = str(request.url_for("get_output_video_file", filename=annotated_filename))
 
     # ── Calculate overall score ─────────────────────────────────────────────
     normalized_jump_height = (jump_height * 100) if jump_height is not None else 0.0
@@ -275,8 +287,11 @@ Output should be a plain text, not markdown or JSON. Use `\n` to enter a new lin
     cur.close()
     conn.close()
 
+    output_payload = dict(output_record)
+    output_payload["annotated_video_url"] = annotated_video_url
+
     return {
         "message": "Video uploaded and analyzed successfully.",
         "input_video": dict(input_record),
-        "output_video": dict(output_record),
+        "output_video": output_payload,
     }
