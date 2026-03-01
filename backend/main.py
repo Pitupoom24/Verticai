@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from helper.analyze_scores import analyze_jump
+from helper.find_jump_height import find_jump_height
 
 load_dotenv()
 
@@ -163,6 +164,12 @@ async def upload_video(file: UploadFile = File(...)):
     annotated_video_path = output["annotated_video_path"]
     annotated_filename = Path(annotated_video_path).name
 
+    # ── Calculate jump height ──────────────────────────────────────────
+    try:
+        jump_height = find_jump_height(str(file_path))
+    except Exception as e:
+        jump_height = None
+
     # ── Insert into output_videos ──────────────────────────────────────────
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -171,9 +178,9 @@ async def upload_video(file: UploadFile = File(...)):
             id, original_filename, file_path,
             hip_normalized_score, smallest_loading_min_hip_flexion,
             knee_normalized_score, smallest_loading_min_knee_flexion,
-            angular_velocity, angular_velocity_score
+            angular_velocity, angular_velocity_score, jump_height
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING *
     """, (
         input_record["id"],
@@ -185,6 +192,7 @@ async def upload_video(file: UploadFile = File(...)):
         metrics["smallest_loading_min_knee_flexion"],
         metrics["angular_velocity"],
         metrics["angular_velocity_score"],
+        jump_height,
     ))
     output_record = cur.fetchone()
     conn.commit()
