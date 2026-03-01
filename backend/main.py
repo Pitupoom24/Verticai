@@ -75,7 +75,8 @@ def startup():
             angular_velocity                FLOAT,
             angular_velocity_score          FLOAT,
             jump_height                     FLOAT,
-            llm_report                      TEXT
+            llm_report                      TEXT,
+            score                           FLOAT
         )
     """)
     conn.commit()
@@ -178,6 +179,16 @@ async def upload_video(file: UploadFile = File(...)):
     annotated_video_path = output["annotated_video_path"]
     annotated_filename = Path(annotated_video_path).name
 
+    # ── Calculate overall score ─────────────────────────────────────────────
+    normalized_jump_height = (jump_height * 100) if jump_height is not None else 0.0
+    score = (
+        normalized_jump_height                          * 0.50 +
+        (metrics["hip_normalized_score"]   or 0.0)     * 0.20 +
+        (metrics["angular_velocity_score"] or 0.0)     * 0.20 +
+        (metrics["knee_normalized_score"]  or 0.0)     * 0.10
+    )
+    score = round(min(score, 100.0), 2)
+
     # ── Generate LLM report ───────────────────────────────────────────
     try:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -229,9 +240,9 @@ Keep the tone motivational but honest. Be specific, not generic.
             id, original_filename, file_path,
             hip_normalized_score, smallest_loading_min_hip_flexion,
             knee_normalized_score, smallest_loading_min_knee_flexion,
-            angular_velocity, angular_velocity_score, jump_height, llm_report
+            angular_velocity, angular_velocity_score, jump_height, llm_report, score
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING *
     """, (
         input_record["id"],
@@ -245,6 +256,7 @@ Keep the tone motivational but honest. Be specific, not generic.
         metrics["angular_velocity_score"],
         jump_height,
         llm_report,
+        score,
     ))
     output_record = cur.fetchone()
     conn.commit()
