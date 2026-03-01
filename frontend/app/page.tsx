@@ -1,9 +1,11 @@
 'use client'
 import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 
 type Stage = 'three-videos' | 'fading-out' | 'single-video' | 'flashing' | 'image'
 
 export default function Home() {
+  const router = useRouter()
   const [stage, setStage] = useState<Stage>('three-videos')
   const [flash, setFlash] = useState(false)
   const finishedCount = useRef(0)
@@ -48,6 +50,10 @@ const startCounting = (key: 'arm' | 'hip' | 'knee', delay: number) => {
       startCounting('hip',  1300)  // matches stat-2
       startCounting('knee', 1700)  // matches stat-3
     }, 600)
+  }
+
+  const handleStartJumping = () => {
+    router.push('/analytics')
   }
 
   return (
@@ -227,7 +233,7 @@ const startCounting = (key: 'arm' | 'hip' | 'knee', delay: number) => {
 
             {/* ── Start Jumping button top right ── */}
             <div style={{ position: 'absolute', top: '3vh', right: '2.5vw', zIndex: 10 }}>
-              <button className="start-btn" onClick={() => alert('Navigate to upload page')}>
+              <button className="start-btn" onClick={handleStartJumping}>
                 Start Jumping
               </button>
             </div>

@@ -3,11 +3,29 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --primary: #12b76a;
+  --border: #e5e7eb;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --secondary: #e8f7ef;
+  --surface-elevated: #fcfcfd;
+  --score-bar: #e5e7eb;
+  --score-good: #facc15;
+  --score-needs-work: #ef4444;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary: var(--secondary);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-score-bar: var(--score-bar);
+  --color-score-good: var(--score-good);
+  --color-score-needs-work: var(--score-needs-work);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -16,6 +34,12 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --border: #2a2a2a;
+    --muted: #1a1a1a;
+    --muted-foreground: #9ca3af;
+    --secondary: #143a28;
+    --surface-elevated: #121212;
+    --score-bar: #222222;
   }
 }
 
