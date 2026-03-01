@@ -116,7 +116,7 @@ def find_jump_height(video_path: str) -> float | None:
             elif state == 'AIRBORNE' and not is_airborne:
                 state = 'STANDING'
                 air_frames = processed - max_frame1
-                t = air_frames / fps
+                t = air_frames / fps - 0.15
                 h = G * t**2 / 8
                 ankle_y_buffer.clear()
                 y1 = None

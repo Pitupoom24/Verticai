@@ -233,6 +233,7 @@ Be specific — reference exact metrics and what the ideal looks like.
 For each improvement area, give 1–2 specific drills or exercises (name them, explain briefly).
 
 Keep the tone motivational but honest. Be specific, not generic.
+Output should be a plain text, not markdown or JSON. Use `\n` to enter a new line. Keep the response concise (max 100 words). 
 """
         response = client.responses.create(
             model="gpt-4.1-mini",
