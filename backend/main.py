@@ -1,5 +1,7 @@
+import asyncio
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -7,6 +9,7 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from openai import OpenAI
 
 from helper.analyze_scores import analyze_jump
 from helper.find_jump_height import find_jump_height
@@ -71,7 +74,8 @@ def startup():
             smallest_loading_min_knee_flexion FLOAT,
             angular_velocity                FLOAT,
             angular_velocity_score          FLOAT,
-            jump_height                      FLOAT
+            jump_height                     FLOAT,
+            llm_report                      TEXT
         )
     """)
     conn.commit()
@@ -150,25 +154,72 @@ async def upload_video(file: UploadFile = File(...)):
     cur.close()
     conn.close()
 
-    # ── Run pose analysis ──────────────────────────────────────────────────
-    try:
-        output = analyze_jump(
-            model_path=str(MODEL_PATH),
-            input_source=str(file_path),
-            output_dir=str(OUTPUT_VIDEOS_DIR),
+    # ── Run pose analysis & jump height concurrently ──────────────────────
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_analyze = loop.run_in_executor(
+            executor,
+            lambda: analyze_jump(
+                model_path=str(MODEL_PATH),
+                input_source=str(file_path),
+                output_dir=str(OUTPUT_VIDEOS_DIR),
+            )
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        future_height = loop.run_in_executor(
+            executor,
+            lambda: find_jump_height(str(file_path))
+        )
+        try:
+            output, jump_height = await asyncio.gather(future_analyze, future_height)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
     metrics = output["metrics"]
     annotated_video_path = output["annotated_video_path"]
     annotated_filename = Path(annotated_video_path).name
 
-    # ── Calculate jump height ──────────────────────────────────────────
+    # ── Generate LLM report ───────────────────────────────────────────
     try:
-        jump_height = find_jump_height(str(file_path))
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        prompt = f"""
+## Here is the reference to ideal ranges of 3 metrics:
+smallest_loading_min_hip_flexion: 70° exactly
+smallest_loading_min_knee_flexion: 83° – 90°
+angular_velocity: ≥ 500
+
+## Athlete's Metrics:
+- smallest_loading_min_hip_flexion: {metrics['smallest_loading_min_hip_flexion']}
+- hip_normalized_score: {metrics['hip_normalized_score']}
+- smallest_loading_min_knee_flexion: {metrics['smallest_loading_min_knee_flexion']}
+- knee_normalized_score: {metrics['knee_normalized_score']}
+- angular_velocity: {metrics['angular_velocity']}
+- angular_velocity_score: {metrics['angular_velocity_score']}
+- jump_height: {jump_height}
+
+## Instruction: Write me a report that includes:
+
+### 1. Performance Summary (2–3 sentences)
+Brief, encouraging overview of this jump's performance.
+
+### 2. Top 3 Strengths
+What the jumper is doing well biomechanically.
+
+### 3. Top 3 Areas to Improve (Priority Order)
+Be specific — reference exact metrics and what the ideal looks like.
+
+### 4. Drill Recommendations
+For each improvement area, give 1–2 specific drills or exercises (name them, explain briefly).
+
+Keep the tone motivational but honest. Be specific, not generic.
+"""
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=prompt
+        )
+        llm_report = response.output_text
     except Exception as e:
-        jump_height = None
+        print(f"❌ LLM report failed: {e}")
+        llm_report = None
 
     # ── Insert into output_videos ──────────────────────────────────────────
     conn = get_db()
@@ -178,9 +229,9 @@ async def upload_video(file: UploadFile = File(...)):
             id, original_filename, file_path,
             hip_normalized_score, smallest_loading_min_hip_flexion,
             knee_normalized_score, smallest_loading_min_knee_flexion,
-            angular_velocity, angular_velocity_score, jump_height
+            angular_velocity, angular_velocity_score, jump_height, llm_report
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING *
     """, (
         input_record["id"],
@@ -193,6 +244,7 @@ async def upload_video(file: UploadFile = File(...)):
         metrics["angular_velocity"],
         metrics["angular_velocity_score"],
         jump_height,
+        llm_report,
     ))
     output_record = cur.fetchone()
     conn.commit()
